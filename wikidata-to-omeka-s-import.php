@@ -1,8 +1,32 @@
 <?php
+@ini_set('upload_max_size' , '100M' );
+
+function get_omeka_location() {
+//   return "http://localhost/omeka-s";
+   return "https://poriartmuseumcollections.pori.fi";
+
+}
 
 function get_pori_wd_items() {
    $ret=array();
    $url="https://query.wikidata.org/sparql?format=json&query=%23items%20from%20tm%20collection%0ASELECT%20%3Fitem%20%3FitemLabel%20%3Fesiintym__kohteesta%20%3Fesiintym__kohteestaLabel%20%3Ftekij_%20%3Ftekij_Label%20%3Fimage%20WHERE%20%7B%0A%20%20%3Fitem%20wdt%3AP195%20wd%3AQ86443703.%0A%20%20%3Fitem%20wdt%3AP18%20%3Fimage%20.%0A%20%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%2Cen%22.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP31%20%3Fesiintym__kohteesta.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP170%20%3Ftekij_.%20%7D%0A%7D";
+   $file=curl_get_contents($url);
+   $json=json_decode($file, true);
+
+   foreach ($json["results"] as $bindings) {
+      foreach ($bindings as $item) {
+         $wd_item=str_replace("http://www.wikidata.org/entity/", "", $item["item"]["value"]);
+         array_push($ret, $wd_item);
+      }
+   }
+
+   $ret=array_unique($ret);
+   return $ret;
+}
+
+function get_pori_wd_items_all() {
+   $ret=array();
+   $url="https://query.wikidata.org/sparql?format=json&query=%23items%20from%20tm%20collection%0ASELECT%20%3Fitem%20%3FitemLabel%20%3Fesiintym__kohteesta%20%3Fesiintym__kohteestaLabel%20%3Ftekij_%20%3Ftekij_Label%20%3Fimage%20WHERE%20%7B%0A%20%20%3Fitem%20wdt%3AP195%20wd%3AQ86443703.%0A%20%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%2Cen%22.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP31%20%3Fesiintym__kohteesta.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP170%20%3Ftekij_.%20%7D%0A%7D";
    $file=curl_get_contents($url);
    $json=json_decode($file, true);
 
@@ -82,7 +106,7 @@ function curl_omekas_post($url, $payload, $method="POST") {
 
 // Parse  Omeka-S properties
 function get_omeka_properties() {
-   $properties_url="http://localhost/omeka-s/api/properties";
+   $properties_url=get_omeka_location()  . "/api/properties";
    $file=file_get_contents($properties_url);
    $json=json_decode($file,true);
    $properties=array();
@@ -96,7 +120,7 @@ function get_omeka_properties() {
 }
 
 function parse_omeka_wikidata_template() {
-   $template_url="http://localhost/omeka-s/api/resource_templates/2";
+   $template_url=get_omeka_location() . "/api/resource_templates/2";
    $file=file_get_contents($template_url);
    $template=json_decode($file, true);
 
@@ -142,7 +166,7 @@ function get_wd_label($qid, $language) {
 }
 
 function get_item($item_id) {
-   $url="http://localhost/omeka-s/api/items/" . $item_id;
+   $url=get_omeka_location() . "/api/items/" . $item_id;
    $file=file_get_contents($url);
    $json=json_decode($file, true);
    return $json;
@@ -154,13 +178,53 @@ function format_quantity($value) {
    return $ret;
 }
 
+function format_time($value) {
+
+   $calendarmodel="";
+   if ($value["calendarmodel"]=="http://www.wikidata.org/entity/Q1985727") {
+      //Proleptic Gregorian calendar
+      $calendarmodel=$value["calendarmodel"];
+   }
+   else
+   {
+      $calendarmodel=$value["calendarmodel"];
+   }
+
+   if ($calendarmodel!="") {
+      if ($value["precision"]==9) {
+         $ret=date("Y", strtotime($value["time"]));
+      }
+      elseif ($value["precision"]==9) {
+         $ret=date("Y", strtotime($value["time"]));
+      }
+      elseif ($value["precision"]==10) {
+         $ret=date("Y-m", strtotime($value["time"]));
+      }
+      elseif ($value["precision"]==11) {
+         $ret=date("Y-m-d", strtotime($value["time"]));
+      }
+      else
+      {
+         $ret=$value["time"];
+      }
+   }
+   else
+   {
+      print_r($value);
+      die("ERROR: Unknown calendarmodel"); 
+   }
+   return $ret;
+}
+
 
 function set_key_value($item_id, $property, $value, $type) {
    global $omeka_properties;
    $t=array("item"=>$item_id, "property"=>$property, "value"=>$value, "type"=>$type);
    print(json_encode($t));
 
-   if (!isset($omeka_properties[$property])) die("Property not found: $property");
+
+   if ($property=="o:item_set") {}
+   elseif (!isset($omeka_properties[$property])) die("Property not found: $property");
 
    $data=get_item($item_id);
    if (!isset($data[$property])) {
@@ -184,23 +248,37 @@ function set_key_value($item_id, $property, $value, $type) {
             if (isset($oldvalue["@id"]) && $oldvalue["@id"]==$v["value"]) $newvalue=0;
          }
          if ($type == 'time') {
-            if (isset($oldvalue["@value"]) && $oldvalue["@value"]==$v[0]["value"]) $newvalue=0;
+            $testvalue=format_time($v);
+            if (isset($oldvalue["@value"]) && $oldvalue["@value"]==$testvalue) $newvalue=0;
          }
          if ($type == 'quantity') {
             $testvalue=format_quantity($v);
             if (isset($oldvalue["@value"]) && $oldvalue["@value"]==$testvalue) $newvalue=0;
          }
+         if ($type == 'o:item_set') {
+            if (isset($oldvalue["o:id"]) && $oldvalue["o:id"]==$v) $newvalue=0;
+         }
       }
 
       if ($newvalue) {
-         $a=array(
-            "type" => $type,
-            "property_id" => $omeka_properties[$property]["o:id"],
-            "property_label" => $omeka_properties[$property]["o:label"],
-            "is_public" => true,
-         );
+         if ($property=="o:item_set") {
+            $a=array();
+         }
+         else
+         {
+            $a=array(
+               "type" => $type,
+               "property_id" => $omeka_properties[$property]["o:id"],
+               "property_label" => $omeka_properties[$property]["o:label"],
+               "is_public" => true,
+            );
+         }
          if ($type == 'literal') {
             $a["@value"]=$v;
+         }
+         elseif ($type == 'time') {
+            $a["type"]="literal";
+            $a["@value"]=format_time($v);
          }
          elseif ($type == 'quantity') {
             $a["type"]="literal";
@@ -215,9 +293,13 @@ function set_key_value($item_id, $property, $value, $type) {
             $a["@id"]=$v["value"];
             $a['o:label']=$v["label"];
          }
+         elseif ($type == 'o:item_set') {
+            $a["@id"]="https://poriartmuseumcollections.pori.fi/api/item_sets/" . $v;
+            $a['o:id']=$v;
+         }
          else
          {
-            die("Unknown value");
+            die("Unknown value: $type");
          }
          array_push($data[$property], $a);
       }
@@ -226,7 +308,7 @@ function set_key_value($item_id, $property, $value, $type) {
   $r=array();
   if ($newvalue) {
      print("FOO: " . $property ."\n");
-     $url="http://localhost/omeka-s/api/items/" . $item_id;
+     $url=get_omeka_location() . "/api/items/" . $item_id;
      $r=curl_omekas_post($url, json_encode($data), "PATCH");
      return json_decode($r, true);
   }
@@ -234,6 +316,7 @@ function set_key_value($item_id, $property, $value, $type) {
 }
 
 function upload_file($item_id, $filename, $url) {
+   if (count($r=get_media($item_id, $filename))) return $r;
    $sourcefile = file_get_contents($url);
    $file_name_with_full_path="/tmp/" . str_replace(" ", "_", trim($filename));
 
@@ -258,7 +341,7 @@ function upload_file($item_id, $filename, $url) {
          "o:label"=> $filename
       ),
     );
-    $r=curl_omekas_post("http://localhost/omeka-s/api/media", array('data'=>json_encode($data), 'file[0]'=>$cFile), "UPLOAD");
+    $r=curl_omekas_post(get_omeka_location() . "/api/media", array('data'=>json_encode($data), 'file[0]'=>$cFile), "UPLOAD");
     print_r($r);
     return $r;
 }
@@ -268,15 +351,15 @@ function create_item($item_class, $resource_class_id, $resource_template_id, $ti
      "@type"=> array("o:Item", $item_class),
      "o:resource_class"=>array(
         "o:id"=> $resource_class_id,
-        "@id"=> 'http://localhost/omeka-s/api/resource_classes/' . $resource_class_id
+        "@id"=> get_omeka_location() . '/api/resource_classes/' . $resource_class_id
      ),
      "o:resource_template"=>array(
         "o:id"=>$resource_template_id,
-        "@id"=>"http://localhost/omeka-s/api/resource_templates/" . $resource_template_id
+        "@id"=>get_omeka_location() . "/api/resource_templates/" . $resource_template_id
      ),
      "o:title"=>$title
    );
-   $url="http://localhost/omeka-s/api/items";   
+   $url=get_omeka_location() . "/api/items";   
 
 
    $r=curl_omekas_post($url, json_encode($data));
@@ -295,9 +378,27 @@ function get_property_from_uri($uri)
    return $omeka_properties_uri[$uri];
 }
 
+function get_media($item_id, $filename) {
+   $file=file_get_contents(get_omeka_location() . "/api/media?item_id=" . urlencode($item_id));
+   $json=json_decode($file, true);
+   foreach($json as $media)
+   {
+      foreach($media as $k=>$v)
+      {
+         if ( $v==$filename) return $media;
+      }
+   }
+   return array();
+}
+
+function add_item_set($id) {
+
+
+}
+
 function get_or_create_omeka_item($qid) {
    global $omeka_template_props;
-   $url="http://localhost/omeka-s/api/items?property%5B0%5D%5Bproperty%5D=121&property%5B0%5D%5Btype%5D=in&property%5B0%5D%5Btext%5D=" . $qid;
+   $url=get_omeka_location() . "/api/items?property%5B0%5D%5Bproperty%5D=121&property%5B0%5D%5Btype%5D=in&property%5B0%5D%5Btext%5D=" . $qid;
    $file=file_get_contents($url);
    $json=json_decode($file, true);
    
@@ -325,7 +426,7 @@ function get_or_create_omeka_item($qid) {
    return $item;
 }
 
-function handle_wikidata_item($qid) {
+function handle_wikidata_item($qid, $itemset) {
    global $wikidata_item_property, $omeka_template, $omeka_template_props, $omeka_properties_uri, $omeka_properties;
 
    $wd_item=get_wd_item($qid);
@@ -333,8 +434,6 @@ function handle_wikidata_item($qid) {
    $wd_fi_description=$wd_item["descriptions"]["fi"]["value"];
 
    print("$qid\t" . $wd_fi_label ."\t" . "\n");
-   sleep(10);
-
 
    $title_property=$omeka_properties_uri[$omeka_template["o:title_property"]["@id"]]["o:term"];
    $description_property=$omeka_properties_uri[$omeka_template["o:description_property"]["@id"]]["o:term"];
@@ -342,6 +441,8 @@ function handle_wikidata_item($qid) {
    $item=get_or_create_omeka_item($qid);
    $prop=set_key_value($item["o:id"], $title_property, $wd_fi_label, "literal");
    $prop=set_key_value($item["o:id"], $description_property, $wd_fi_description, "literal");
+
+   $prop=set_key_value($item["o:id"], "o:item_set", $itemset, "o:item_set");
 
    $imagefiles=array();
    foreach ($omeka_template_props as $tp) {
@@ -373,9 +474,9 @@ function handle_wikidata_item($qid) {
          elseif ($snak_type=="uri") {
             $prop=set_key_value($item["o:id"], $tp["o:term"], $snak_values, "uri");
          }
-//         elseif ($snak_type=="time") {
-//            $prop=set_key_value($item["o:id"], $tp["o:term"], $snak_values, "time");
-//         }
+         elseif ($snak_type=="time") {
+            $prop=set_key_value($item["o:id"], $tp["o:term"], $snak_values, "time");
+         }
          elseif ($snak_type=="quantity") {
             $prop=set_key_value($item["o:id"], $tp["o:term"], $snak_values, "quantity");
          }
@@ -386,8 +487,8 @@ function handle_wikidata_item($qid) {
          else
          {
             print_r($snak_type);
-//            print_r($snak_values);
-//            die();
+            print_r($snak_values);
+            die();
          }
       }
    }
@@ -395,25 +496,32 @@ function handle_wikidata_item($qid) {
    {
       print_r($image);
       $url="https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url&titles=file:" . urlencode(str_replace(" ", "_", trim($image['label'])));
+      $url.="&iiurlwidth=1024";
       $file=file_get_contents($url);
       $json=json_decode($file, true);
       if (isset($json["query"]) && isset($json["query"]["pages"])) {
          foreach($json["query"]["pages"] as $p) {
             print_r($p);
-            $imageurl=$p["imageinfo"][0]["url"];
+//            $imageurl=$p["imageinfo"][0]["url"];
+            $imageurl=$p["imageinfo"][0]["thumburl"];
             upload_file($item["o:id"], $image['label'], $imageurl);
          }
       }
    }
 }
 
-list($omeka_template, $omeka_template_props)= parse_omeka_wikidata_template();
 list($omeka_properties, $omeka_properties_uri)=get_omeka_properties();
+list($omeka_template, $omeka_template_props)= parse_omeka_wikidata_template();
 
 $wikidata_items=get_pori_wd_items();
 
 foreach ($wikidata_items as $qid) {
-   $r=handle_wikidata_item($qid);
+   $r=handle_wikidata_item($qid, 86); // Porin taidemuseon Commons-kuvat
+}
+
+$wikidata_items=get_pori_wd_items_all();
+foreach ($wikidata_items as $qid) {
+   $r=handle_wikidata_item($qid, 107); // Porin taidemuseon Wikidata-kohteet
 }
 
 ?>
