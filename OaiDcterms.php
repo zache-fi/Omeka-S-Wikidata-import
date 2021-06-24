@@ -129,6 +129,7 @@ class OaiDcterms extends AbstractMetadata
             $termValues = $this->filterValues($item, $term, $termValues);
             foreach ($termValues as $value) {
                 list($text, $attributes) = $this->formatValue($value);
+                $attributes["comment"]=$values["$term"]["alternate_comment"] ?? "";
                 $this->appendNewElement($oai, $term, $text, $attributes);
             }
         }
@@ -139,6 +140,7 @@ class OaiDcterms extends AbstractMetadata
            foreach ($wikidata_uri["values"] as $k=>$v) {
                    list($text, $attributes) = $this->formatValue($v);
                    $attributes["type"]='wikidata';
+                   $attributes["comment"]=$wikidata_uri["alternate_comment"];
 	           $this->appendNewElement($oai, "dcterms:identifier", $text , $attributes);
                    break;
            }
@@ -151,7 +153,7 @@ class OaiDcterms extends AbstractMetadata
            foreach ($wikidata_uri["values"] as $k=>$v) {
                    list($text, $attributes) = $this->formatValue($v);
                    $attributes["type"]='wikidata:P217';
-                   $attributes["comment"]='wikidata:P217 (collection number)';
+                   $attributes["comment"]=$wikidata_uri["alternate_comment"];
 	           $this->appendNewElement($oai, "dcterms:identifier", $text , $attributes);
                    break;
            }
@@ -167,8 +169,8 @@ class OaiDcterms extends AbstractMetadata
            $wikidata_uri=$valuesAll["schema:collection"];
            foreach ($wikidata_uri["values"] as $k=>$v) {
                    list($text, $attributes) = $this->formatValue($v); 
-                   $attributes["type"]='wikidata:P195';
                    $attributes["comment"]='wikidata:P195 (collection)';
+                   $attributes["comment"]=$wikidata_uri["alternate_comment"];
 	           $this->appendNewElement($oai, "dcterms:isPartOf", $text, $attributes );
            }
         }
@@ -190,7 +192,7 @@ class OaiDcterms extends AbstractMetadata
            foreach ($wikidata_uri["values"] as $k=>$v) {
                    list($text, $attributes) = $this->formatValue($v); 
                    $attributes["type"]='wikidata:P186';
-                   $attributes["comment"]='wikidata:P186 (made from materia)';
+                   $attributes["comment"]=$wikidata_uri["alternate_comment"];
 	           $this->appendNewElement($oai, "material", $text, $attributes );
            }
         }
@@ -224,17 +226,19 @@ class OaiDcterms extends AbstractMetadata
         if (count($width)==1 && count($height)==1 && count($depth)==1) {
                    $text=$width[0] . " x " . $height[0] . " x " . $depth[0];
                    $attributes=array(
-                                  'schema:width' => $width[0],
-                                  'schema:height' => $height[0],
-                                  'schema:depth' => $depth[0],
+                                  'width' => $width[0],
+                                  'height' => $height[0],
+                                  'depth' => $depth[0],
+                                  'comment' => "P2049, P2048, P5524"
                                );
 	           $this->appendNewElement($oai, "dcterms:format", $text, $attributes );
         }
         elseif (count($width)==1 && count($height)==1) {
                    $text=$width[0] . " x " . $height[0] ;
                    $attributes=array(
-                                  'schema:width' => $width[0],
-                                  'schema:height' => $height[0]
+                                  'width' => $width[0],
+                                  'height' => $height[0],
+                                  'comment' => "P2049, P2048"
                                );
 	           $this->appendNewElement($oai, "dcterms:format", $text, $attributes );
         }
@@ -244,6 +248,7 @@ class OaiDcterms extends AbstractMetadata
            $wikidata_uri=$valuesAll["bibo:uri"];
            foreach ($wikidata_uri["values"] as $k=>$v) {
                    list($text, $attributes) = $this->formatValue($v); 
+                   $attributes["comment"]=$wikidata_uri["alternate_comment"];
 	           $this->appendNewElement($oai, "recordID", $text );
                    break;
            }
