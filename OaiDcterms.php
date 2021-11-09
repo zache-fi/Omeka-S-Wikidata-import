@@ -193,7 +193,7 @@ class OaiDcterms extends AbstractMetadata
                    list($text, $attributes) = $this->formatValue($v); 
                    $attributes["type"]='wikidata:P186';
                    $attributes["comment"]=$wikidata_uri["alternate_comment"];
-	           $this->appendNewElement($oai, "material", $text, $attributes );
+	           $this->appendNewElement($oai, "medium", $text, $attributes );
            }
         }
 
