@@ -1,15 +1,34 @@
 <?php
 @ini_set('upload_max_size' , '100M' );
 
+$resource_template_number=2;
+
+$omega_login=array(
+     "key_identity" => "",
+     "key_credential" => ""
+);
+
 function get_omeka_location() {
-//   return "http://localhost/omeka-s";
-   return "https://poriartmuseumcollections.pori.fi";
+   return "http://localhost:81/omeka-s";
+//   return "https://poriartmuseumcollections.pori.fi";
 
 }
 
+# Get items with commons image
+# return list of wikidata items
 function get_pori_wd_items() {
    $ret=array();
-   $url="https://query.wikidata.org/sparql?format=json&query=%23items%20from%20tm%20collection%0ASELECT%20%3Fitem%20%3FitemLabel%20%3Fesiintym__kohteesta%20%3Fesiintym__kohteestaLabel%20%3Ftekij_%20%3Ftekij_Label%20%3Fimage%20WHERE%20%7B%0A%20%20%3Fitem%20wdt%3AP195%20wd%3AQ86443703.%0A%20%20%3Fitem%20wdt%3AP18%20%3Fimage%20.%0A%20%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%2Cen%22.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP31%20%3Fesiintym__kohteesta.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP170%20%3Ftekij_.%20%7D%0A%7D";
+   $sparql='
+SELECT ?item ?itemLabel ?esiintym__kohteesta ?esiintym__kohteestaLabel ?tekij_ ?tekij_Label ?image WHERE {
+  ?item wdt:P195 wd:Q86443703.
+  ?item wdt:P18 ?image .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,en". }
+  OPTIONAL { ?item wdt:P31 ?esiintym__kohteesta. }
+  OPTIONAL { ?item wdt:P170 ?tekij_. }
+}
+';
+
+   $url="https://query.wikidata.org/sparql?format=json&query=" . urlencode($sparql);
    $file=curl_get_contents($url);
    $json=json_decode($file, true);
 
@@ -24,9 +43,11 @@ function get_pori_wd_items() {
    return $ret;
 }
 
+# Get also items without commons image
 function get_pori_wd_items_all() {
    $ret=array();
    $url="https://query.wikidata.org/sparql?format=json&query=%23items%20from%20tm%20collection%0ASELECT%20%3Fitem%20%3FitemLabel%20%3Fesiintym__kohteesta%20%3Fesiintym__kohteestaLabel%20%3Ftekij_%20%3Ftekij_Label%20%3Fimage%20WHERE%20%7B%0A%20%20%3Fitem%20wdt%3AP195%20wd%3AQ86443703.%0A%20%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%2Cen%22.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP31%20%3Fesiintym__kohteesta.%20%7D%0A%20%20OPTIONAL%20%7B%20%3Fitem%20wdt%3AP170%20%3Ftekij_.%20%7D%0A%7D";
+
    $file=curl_get_contents($url);
    $json=json_decode($file, true);
 
@@ -54,14 +75,11 @@ function curl_get_contents($url) {
 
 
 function curl_omekas_post($url, $payload, $method="POST") {
-   $login=array(
-     "key_identity" => "",
-     "key_credential" => ""
-   );
+   global $omega_login;
 
    // API URL
    if (!preg_match("|[?]|", $url)) $url.="?";
-   foreach($login as $k=>$v)
+   foreach($omega_login as $k=>$v)
    {
       $url.="&" . $k ."=" .urlencode($v);
    }
@@ -120,7 +138,8 @@ function get_omeka_properties() {
 }
 
 function parse_omeka_wikidata_template() {
-   $template_url=get_omeka_location() . "/api/resource_templates/2";
+   global $resource_template_number;
+   $template_url=get_omeka_location() . "/api/resource_templates/" . $resource_template_number;
    $file=file_get_contents($template_url);
    $template=json_decode($file, true);
 
@@ -317,7 +336,7 @@ function set_key_value($item_id, $property, $value, $type) {
 
 function upload_file($item_id, $filename, $url) {
    if (count($r=get_media($item_id, $filename))) return $r;
-   $sourcefile = file_get_contents($url);
+   $sourcefile = curl_get_contents($url);
    $file_name_with_full_path="/tmp/" . str_replace(" ", "_", trim($filename));
 
    file_put_contents($file_name_with_full_path, $sourcefile);
@@ -343,6 +362,7 @@ function upload_file($item_id, $filename, $url) {
     );
     $r=curl_omekas_post(get_omeka_location() . "/api/media", array('data'=>json_encode($data), 'file[0]'=>$cFile), "UPLOAD");
     print_r($r);
+    sleep(10);
     return $r;
 }
 
@@ -399,6 +419,7 @@ function add_item_set($id) {
 function get_or_create_omeka_item($qid) {
    global $omeka_template_props;
    $url=get_omeka_location() . "/api/items?property%5B0%5D%5Bproperty%5D=121&property%5B0%5D%5Btype%5D=in&property%5B0%5D%5Btext%5D=" . $qid;
+
    $file=file_get_contents($url);
    $json=json_decode($file, true);
    
@@ -519,10 +540,10 @@ foreach ($wikidata_items as $qid) {
    $r=handle_wikidata_item($qid, 86); // Porin taidemuseon Commons-kuvat
 }
 
-$wikidata_items=get_pori_wd_items_all();
-foreach ($wikidata_items as $qid) {
-   $r=handle_wikidata_item($qid, 107); // Porin taidemuseon Wikidata-kohteet
-}
+#$wikidata_items=get_pori_wd_items_all();
+#foreach ($wikidata_items as $qid) {
+#   $r=handle_wikidata_item($qid, 107); // Porin taidemuseon Wikidata-kohteet
+#}
 
 ?>
 
