@@ -2,10 +2,13 @@
 @ini_set('upload_max_size' , '100M' );
 
 $resource_template_number=2;
+$collection_wikidata_item="Q99337879";  # Pyhälahti
+#$collection_wikidata_item="Q86443703";  # Pori
+#$collection_wikidata_item="Q83222759";  # Lönström
 
 $omega_login=array(
-     "key_identity" => "",
-     "key_credential" => ""
+      "key_identity" => "",
+      "key_credential" => ""
 );
 
 function get_omeka_location() {
@@ -16,17 +19,26 @@ function get_omeka_location() {
 
 # Get items with commons image
 # return list of wikidata items
-function get_pori_wd_items() {
+function get_wd_items($collection_qid, $images_only=False) {
    $ret=array();
    $sparql='
 SELECT ?item ?itemLabel ?esiintym__kohteesta ?esiintym__kohteestaLabel ?tekij_ ?tekij_Label ?image WHERE {
-  ?item wdt:P195 wd:Q86443703.
-  ?item wdt:P18 ?image .
+  ?item wdt:P195 wd:'. $collection_qid .'.
+  __IMAGES__
+#  ?item wdt:P18 ?image .
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en,en". }
   OPTIONAL { ?item wdt:P31 ?esiintym__kohteesta. }
   OPTIONAL { ?item wdt:P170 ?tekij_. }
 }
 ';
+
+   if ($images_only==True) {
+       $sparql=str_replace("__IMAGES__", "?item wdt:P18 ?image .", $sparql);
+   }
+   else
+   {
+       $sparql=str_replace("__IMAGES__", "", $sparql);
+   }
 
    $url="https://query.wikidata.org/sparql?format=json&query=" . urlencode($sparql);
    $file=curl_get_contents($url);
@@ -362,7 +374,7 @@ function upload_file($item_id, $filename, $url) {
     );
     $r=curl_omekas_post(get_omeka_location() . "/api/media", array('data'=>json_encode($data), 'file[0]'=>$cFile), "UPLOAD");
     print_r($r);
-    sleep(10);
+    sleep(3);
     return $r;
 }
 
@@ -534,7 +546,7 @@ function handle_wikidata_item($qid, $itemset) {
 list($omeka_properties, $omeka_properties_uri)=get_omeka_properties();
 list($omeka_template, $omeka_template_props)= parse_omeka_wikidata_template();
 
-$wikidata_items=get_pori_wd_items();
+$wikidata_items=get_wd_items($collection_wikidata_item, False);
 
 foreach ($wikidata_items as $qid) {
    $r=handle_wikidata_item($qid, 86); // Porin taidemuseon Commons-kuvat
