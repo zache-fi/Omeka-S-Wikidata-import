@@ -32,7 +32,8 @@ class OaiDcterms extends AbstractMetadata
     const METADATA_NAMESPACE = 'http://www.openarchives.org/OAI/2.0/oai_dcterms/';
 
     /** XML schema for output format */
-    const METADATA_SCHEMA = 'http://www.openarchives.org/OAI/2.0/oai_dcterms.xsd';
+//    const METADATA_SCHEMA = 'http://www.openarchives.org/OAI/2.0/oai_dcterms.xsd';
+    const METADATA_SCHEMA = 'http://www.openarchives.org/OAI/2.0/oai_dc.xsd';
 
     /** XML namespace for Dublin Core */
     const DCTERMS_NAMESPACE_URI = 'http://purl.org/dc/terms/';
@@ -161,7 +162,7 @@ class OaiDcterms extends AbstractMetadata
 
         $appendIdentifier = $this->singleIdentifier($item);
         if ($appendIdentifier) {
-            $this->appendNewElement($oai, 'dcterms:identifier', $appendIdentifier, ['xsi:type' => 'dcterms:URI']);
+//            $this->appendNewElement($oai, 'dcterms:identifier', $appendIdentifier);
         }
 
         // Schema:collection -> dcterms:isPartOf
