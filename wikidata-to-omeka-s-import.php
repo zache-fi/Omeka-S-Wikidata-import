@@ -2,18 +2,78 @@
 @ini_set('upload_max_size' , '100M' );
 
 $resource_template_number=2;
-$collection_wikidata_item="Q99337879";  # Pyhälahti
-#$collection_wikidata_item="Q86443703";  # Pori
+#$collection_wikidata_item="Q99337879";  # Pyhälahti
+$collection_wikidata_item="Q86443703";  # Pori
 #$collection_wikidata_item="Q83222759";  # Lönström
-
+#$item_set_number=938; # Lönström
+$item_set_number=107; # Pori
+$lonnstrom_images=get_pori_images();
 $omega_login=array(
-      "key_identity" => "",
-      "key_credential" => ""
+      "key_identity" => "2h0XJwwNKWZ8KBCrqwQpGed7SHpEaJqJ",
+      "key_credential" => "xHS1rTraedH6gg85nrl1duC6QZCCa3mf"
 );
 
+
+function get_pori_images() {
+   $file=trim(file_get_contents('pori_kuvat.txt'));
+
+   $rows=preg_split("|\n|", $file);
+   $files=array();
+   $filetypes=array("jpg");
+
+   foreach ($filetypes as $filetype) {
+      foreach ($rows as $row) {
+        $row=trim($row);
+        if (!preg_match("|" . $filetype ."|", $row)) continue;
+        if (preg_match("|/(TM[0123][0-9_]+)_|", $row, $m))
+        {
+            $filekey=$m[1];
+            if(!isset($files[$filekey])) $files[$filekey]=$row;
+            elseif ( $files[$filekey]==$row) continue;
+            else {
+                print($row);
+                print("\t" . $files[$filekey]);
+
+                print("\nMultiple images");
+            }
+        }
+      }
+   }
+   return $files;
+}
+
+function get_lonnstrom_images() {
+   $file=trim(file_get_contents('lonnstrom_files_2.txt'));
+
+   $rows=preg_split("|\n|", $file);
+   $files=array();
+   $filetypes=array("tekijänoikeuksilla", "Lönnströmin");
+
+   foreach ($filetypes as $filetype) {
+      foreach ($rows as $row) {
+        $row=trim($row);
+        if (!preg_match("|" . $filetype ."|", $row)) continue;
+        if (preg_match("|/(TRLS_[0-9_]+)_|", $row, $m))
+        {
+            $filekey=$m[1];
+            if(!isset($files[$filekey])) $files[$filekey]=$row;
+            elseif ( $files[$filekey]==$row) continue;
+            else {
+                print($row);
+                print("\t" . $files[$filekey]);
+
+                print("\nMultiple images");
+            }
+        }
+      }
+   }
+   return $files;
+}
+
+
 function get_omeka_location() {
-   return "http://localhost:81/omeka-s";
-//   return "https://poriartmuseumcollections.pori.fi";
+//   return "http://localhost:81/omeka-s";
+   return "https://poriartmuseumcollections.pori.fi";
 
 }
 
@@ -248,9 +308,13 @@ function format_time($value) {
 }
 
 
-function set_key_value($item_id, $property, $value, $type) {
+function set_key_value($item_id, $property, $value, $type, $language="") {
    global $omeka_properties;
    $t=array("item"=>$item_id, "property"=>$property, "value"=>$value, "type"=>$type);
+   if ($language!="") {
+       $t["language"]=$language;
+   }
+
    print(json_encode($t));
 
 
@@ -269,7 +333,8 @@ function set_key_value($item_id, $property, $value, $type) {
       $newvalue=1;
       foreach ($data[$property] as $oldvalue)
       {
-         if (isset($oldvalue["@value"]) && $oldvalue["@value"]==$v) $newvalue=0;
+         if ($language=="" && isset($oldvalue["@value"]) && $oldvalue["@value"]==$v) $newvalue=0;
+         elseif (isset($oldvalue["@language"]) && $language==$oldvalue["@language"] && isset($oldvalue["@value"]) && $oldvalue["@value"]==$v) $newvalue=0;
          if ($type == 'wikibase-entityid') {
             $testvalue="http://www.wikidata.org/entity/" . $v["id"];
             if (isset($oldvalue["@id"]) && $oldvalue["@id"]==$testvalue) $newvalue=0;
@@ -306,6 +371,7 @@ function set_key_value($item_id, $property, $value, $type) {
          }
          if ($type == 'literal') {
             $a["@value"]=$v;
+            if ($language!="") $a["@language"]=$language;
          }
          elseif ($type == 'time') {
             $a["type"]="literal";
@@ -340,18 +406,26 @@ function set_key_value($item_id, $property, $value, $type) {
   if ($newvalue) {
      print("FOO: " . $property ."\n");
      $url=get_omeka_location() . "/api/items/" . $item_id;
+     print($url);
+//     print_r($data);
      $r=curl_omekas_post($url, json_encode($data), "PATCH");
      return json_decode($r, true);
   }
   return $r;
 }
 
-function upload_file($item_id, $filename, $url) {
+function upload_file($item_id, $filename, $url, $source_id) {
    if (count($r=get_media($item_id, $filename))) return $r;
-   $sourcefile = curl_get_contents($url);
-   $file_name_with_full_path="/tmp/" . str_replace(" ", "_", trim($filename));
 
-   file_put_contents($file_name_with_full_path, $sourcefile);
+   if (preg_match("|\Ahttp|ism", $url)) {
+       $sourcefile = curl_get_contents($url);
+       $file_name_with_full_path="/tmp/" . str_replace(" ", "_", trim($filename));
+       file_put_contents($file_name_with_full_path, $sourcefile);
+   }
+   else
+   {
+       $file_name_with_full_path=$url;
+   }
    $cFile = curl_file_create($file_name_with_full_path);
 
    $data = array(
@@ -368,13 +442,14 @@ function upload_file($item_id, $filename, $url) {
          "type"=> "uri",
          "property_id"=> 11,
          "property_label"=> "Source",
-         "@id"=> "https://upload.wikimedia.org/wikipedia/commons/e/e9/Alexander_Laureus_Lautta%2C_jossa_on_lukuisia_matkustajia_ja_karjaa_1808.jpg",
+         "@id"=> $source_id,
          "o:label"=> $filename
       ),
     );
     $r=curl_omekas_post(get_omeka_location() . "/api/media", array('data'=>json_encode($data), 'file[0]'=>$cFile), "UPLOAD");
     print_r($r);
-    sleep(3);
+    sleep(1);
+
     return $r;
 }
 
@@ -460,7 +535,7 @@ function get_or_create_omeka_item($qid) {
 }
 
 function handle_wikidata_item($qid, $itemset) {
-   global $wikidata_item_property, $omeka_template, $omeka_template_props, $omeka_properties_uri, $omeka_properties;
+   global $wikidata_item_property, $omeka_template, $omeka_template_props, $omeka_properties_uri, $omeka_properties, $lonnstrom_images;
 
    $wd_item=get_wd_item($qid);
    $wd_fi_label=$wd_item["labels"]["fi"]["value"];
@@ -471,9 +546,17 @@ function handle_wikidata_item($qid, $itemset) {
    $title_property=$omeka_properties_uri[$omeka_template["o:title_property"]["@id"]]["o:term"];
    $description_property=$omeka_properties_uri[$omeka_template["o:description_property"]["@id"]]["o:term"];
 
+//   if ($qid!="Q92376357") return;
    $item=get_or_create_omeka_item($qid);
-   $prop=set_key_value($item["o:id"], $title_property, $wd_fi_label, "literal");
-   $prop=set_key_value($item["o:id"], $description_property, $wd_fi_description, "literal");
+   $langs=array('fi', 'sv','en','ru','no','de','es','fr','et','se','smn','sms');
+   foreach ($langs as $lang) {
+       if (isset($wd_item["labels"][$lang])) {
+           $prop=set_key_value($item["o:id"], $title_property, $wd_item["labels"][$lang]["value"], "literal", $lang);
+       }
+       if (isset($wd_item["descriptions"][$lang])) {
+           $prop=set_key_value($item["o:id"], $description_property, $wd_item["descriptions"][$lang]["value"] , "literal", $lang);
+       }
+   }
 
    $prop=set_key_value($item["o:id"], "o:item_set", $itemset, "o:item_set");
 
@@ -497,8 +580,20 @@ function handle_wikidata_item($qid, $itemset) {
             }
             else
             {
-               array_push($snak_values, $wd_snak["mainsnak"]["datavalue"]["value"]);
-               $snak_type=$wd_snak["mainsnak"]["datavalue"]["type"];
+               if (isset($wd_snak["mainsnak"]["datavalue"])) {
+                   array_push($snak_values, $wd_snak["mainsnak"]["datavalue"]["value"]);
+                   $snak_type=$wd_snak["mainsnak"]["datavalue"]["type"];
+               }
+               elseif ($wd_snak["mainsnak"]["snaktype"]=="somevalue") {
+                   continue;
+                   array_push($snak_values, "tuntematon");
+                   $snak_type=$wd_snak["mainsnak"]["somevalue"]["type"];
+               }
+               else
+               {
+                   print_r($wd_snak["mainsnak"]);
+                   die("ERROR missing datavalue");
+               }
             }
          }
          if ($snak_type=="string") {
@@ -535,11 +630,41 @@ function handle_wikidata_item($qid, $itemset) {
       if (isset($json["query"]) && isset($json["query"]["pages"])) {
          foreach($json["query"]["pages"] as $p) {
             print_r($p);
-//            $imageurl=$p["imageinfo"][0]["url"];
-            $imageurl=$p["imageinfo"][0]["thumburl"];
-            upload_file($item["o:id"], $image['label'], $imageurl);
+            $imageurl=$p["imageinfo"][0]["url"];
+//            $imageurl=$p["imageinfo"][0]["thumburl"];
+            upload_file($item["o:id"], $image['label'], $imageurl, $imageurl);
          }
       }
+   }
+
+
+   if (!isset($item["schema:catalogNumber"])) {
+       print_r($item);
+       print($item["schema:catalogNumber"][0]["@value"]);
+//       die("VIRHE");
+       return;
+   }
+
+   if (count($imagefiles)==0) {
+       
+       $filename_postfix="";
+//       $lonnstrom_key=str_replace(":", "_", str_replace(" ", "_",  $item["schema:catalogNumber"][0]["@value"]));
+       $lonnstrom_key=str_replace(" ", "",  $item["schema:catalogNumber"][0]["@value"]);
+       if (isset($lonnstrom_images[$lonnstrom_key])) {
+           $imageurl=$lonnstrom_images[$lonnstrom_key];
+       }
+       else
+       {
+           print_r($lonnstrom_key);
+           print("UPLOAD FILE FAILED");
+           return;
+
+       }
+       $image_label= basename($imageurl);;
+       print($image_label);
+       print("\nUPLOAD FILE");
+       //sleep(10);
+       upload_file($item["o:id"], $image_label, $imageurl, md5($imageurl) . "/" . $image_label);
    }
 }
 
@@ -549,7 +674,9 @@ list($omeka_template, $omeka_template_props)= parse_omeka_wikidata_template();
 $wikidata_items=get_wd_items($collection_wikidata_item, False);
 
 foreach ($wikidata_items as $qid) {
-   $r=handle_wikidata_item($qid, 86); // Porin taidemuseon Commons-kuvat
+//   $r=handle_wikidata_item($qid, FIXME); // Porin taidemuseon Commons-kuvat
+   $r=handle_wikidata_item($qid, $item_set_number); // Porin taidemuseon Commons-kuvat
+//   die(1);
 }
 
 #$wikidata_items=get_pori_wd_items_all();
